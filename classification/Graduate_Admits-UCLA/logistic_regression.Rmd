@@ -1,0 +1,147 @@
+---
+title: "Logistic Regression"
+author: "Evan Story"
+date: "May 15, 2016"
+output: html_document
+source: http://www.ats.ucla.edu/stat/r/dae/logit.htm
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(aod)
+library(ggplot2)
+library(Rcpp)
+```
+
+Get input data and show a sample.
+```{r}
+mydata <- read.csv("http://www.ats.ucla.edu/stat/data/binary.csv")
+## view the first few rows of the data
+head(mydata)
+```
+
+Summarize the input data.
+```{r}
+summary(mydata)
+```
+
+Compute the SD of each col.
+```{r}
+sapply(mydata, sd)
+```
+
+Crosstab admit with rank.
+```{r}
+## two-way contingency table of categorical outcome and predictors
+## we want to make sure there are not 0 cells
+xtabs(~ admit + rank, data = mydata)
+```
+
+Run binomial logistic regression (LR).
+```{r}
+mydata$rank <- factor(mydata$rank)
+mylogit <- glm(admit ~ gre + gpa + rank, data = mydata, family = "binomial")
+```
+
+Summarize the LR model.
+```{r}
+summary(mylogit)
+```
+
+CI of LR model.
+```{r}
+## CIs using profiled log-likelihood
+confint(mylogit)
+```
+
+Another CI of LR model.
+```{r}
+## CIs using standard errors
+confint.default(mylogit)
+```
+
+Test the true value of the rank parameter.
+```{r}
+wald.test(b = coef(mylogit), Sigma = vcov(mylogit), Terms = 4:6)
+```
+
+Test the true value of the rank parameter against each other rank.
+```{r}
+l <- cbind(0,0,0,1,-1,0)
+wald.test(b = coef(mylogit), Sigma = vcov(mylogit), L = l)
+```
+
+Exponentiated coefs can be interpreted as odds ratios...
+```{r}
+## odds ratios only
+exp(coef(mylogit))
+```
+```{r}
+## odds ratios and 95% CI
+exp(cbind(OR = coef(mylogit), confint(mylogit)))
+```
+
+Create a data frame of the means and factor values...
+```{r}
+newdata1 <- with(mydata,
+  data.frame(gre = mean(gre), gpa = mean(gpa), rank = factor(1:4)))
+
+## view data frame
+newdata1
+```
+
+...so we can calculate the predicted probability of admission at each value of rank, holding gre and gpa at their means.
+```{r}
+newdata1$rankP <- predict(mylogit, newdata = newdata1, type = "response")
+newdata1
+```
+
+```{r}
+newdata2 <- with(mydata,
+  data.frame(gre = rep(seq(from = 200, to = 800, length.out = 100), 4),
+  gpa = mean(gpa), rank = factor(rep(1:4, each = 100))))
+```
+
+Calc the predicted probabilities along with standard error, which enables plotting a CI.
+```{r}
+newdata3 <- cbind(newdata2, predict(mylogit, newdata = newdata2, type="link", se=TRUE))
+newdata3 <- within(newdata3, {
+  PredictedProb <- plogis(fit)
+  LL <- plogis(fit - (1.96 * se.fit))
+  UL <- plogis(fit + (1.96 * se.fit))
+})
+
+## view first few rows of final dataset
+head(newdata3)
+```
+
+Plot the predicted probabilities and 95% CIs.
+```{r}
+ggplot(newdata3, aes(x = gre, y = PredictedProb)) +
+  geom_ribbon(aes(ymin = LL, ymax = UL, fill = rank), alpha = .2) +
+  geom_line(aes(colour = rank), size=1)
+```
+
+Find the test statistic: a difference in deviance between the null and alternate models.
+```{r}
+with(mylogit, null.deviance - deviance)
+```
+
+Calc the degrees of freedom.
+```{r}
+with(mylogit, df.null - df.residual)
+```
+
+Calc the p-value.
+```{r}
+with(mylogit, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+```
+
+Calc the log-likelihood. This checks to what degree our model as a whole fits significantly better than an empty model.
+```{r}
+logLik(mylogit)
+```
+
