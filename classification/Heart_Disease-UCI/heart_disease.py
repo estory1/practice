@@ -10,9 +10,12 @@ import pandas as pd
 import sklearn
 
 #%%
-filepath = os.path.expanduser("~") + "/Documents/syncable/home/dev/data_science/practice/by_dataset/heart_disease-uci/heart.csv"
+filepath = os.path.expanduser("~") + "/Documents/syncable/home/dev/data_science/practice/classification/Heart_Disease-UCI/heart.csv"
 df = pd.read_csv(filepath)
 df.head()
+
+#%%
+df.describe()
 
 #%% [markdown]
 # ## sklearn
@@ -45,15 +48,27 @@ clf.score(X, y)
 #%%
 from sklearn.model_selection import cross_val_score
 
-cross_val_score( clf, X, y, scoring='f1', cv=5 )
+lr_cv_f1 = cross_val_score( clf, X, y, scoring='f1', cv=5 )
+pd.Series( lr_cv_f1 ).describe()
 
 #%%
-cross_val_score( clf, X, y, scoring='roc_auc', cv=5 )
+lr_cv_auc = cross_val_score( clf, X, y, scoring='roc_auc', cv=5 )
+pd.Series( lr_cv_auc ).describe()
 
 #%%
 from sklearn.metrics import confusion_matrix
 
 confusion_matrix( y, clf.predict(X) )
+
+#%% [markdown]
+### What we learned from the above:
+###### 1) With n=303, m=13, the dataset is miniscule, so quick training is practically assured.
+###### 2) Training is on non-standardized, non-centered data. ==> Model is sensitive to particular value ranges.
+###### 3) Accuracy = 0.858; F1 (mean, SD) of 5 models = (0.857, 0.040); AUC (mean, SD) of 5 models = (0.898, 0.045).
+###### 3.1) Accuracy only gives a point-estimate of model quality; no understanding of variation w.r.t. out-of-sample data.
+###### 3.2) F1 gives equal weight to classification precision & recall. Mean is lowest, but SD is lower than AUC, suggesting at first glance that F1-judged models will perform most reliably (albeit marginally so, given the small SD delta between them).
+###### 4) The trace of the confusion matrix shows relatively little model error.
+
 
 #%% [markdown]
 # ## Spark

@@ -19,7 +19,7 @@ import sklearn
 #%%
 randseed = 42
 
-filepath = "/Users/estory/Documents/syncable/home/dev/data_science/practice/suicide/suicide-rates-overview-1985-to-2016.zip"
+filepath = os.path.expanduser("~") + "/Documents/syncable/home/dev/data_science/practice/classification/Suicide-Kaggle_russellyates88/suicide-rates-overview-1985-to-2016.zip"
 df = pd.read_csv(filepath)
 df = df.dropna()
 df.head()
