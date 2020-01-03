@@ -9,6 +9,7 @@
 # 3. Python+pandas+sklearn makes most ML jobs relatively easy.
 import os
 import sys
+import pprint
 import numpy as np
 import pandas as pd 
 import sklearn
@@ -16,6 +17,8 @@ import pyspark
 from pyspark import SparkContext
 
 print( "module versions: " + str([ pyspark.__version__ , sklearn.__version__ , pd.__version__ , np.__version__ ]) )
+
+pp = pprint.PrettyPrinter(indent=2)
 
 #%% [markdown]
 ### Shared training parameters
@@ -99,13 +102,14 @@ confusion_matrix( y, clf.predict(X) )
 
 
 #%% [markdown]
-# ## Spark
+# ## Spark logistic regression, round 1
 #%%
 # https://spark.apache.org/docs/2.1.0/ml-classification-regression.html#binomial-logistic-regression
 # import findspark
 # findspark.init()
 
-# spark.stop()
+if "spark" in dir() and spark is not None:
+    spark.stop()
 spark = SparkContext(appName="heart")
 
 # dfs = spark.read.format('com.databricks.spark.csv').load(filepath)
@@ -114,7 +118,7 @@ spark = SparkContext(appName="heart")
 from pyspark.sql import SQLContext
 sqlContext = SQLContext(spark)
 sdf = sqlContext.createDataFrame(df)
-sdf.head(10)
+sdf.head(5)
 
 #%%
 # let's see summary stats on the input frame
@@ -122,13 +126,13 @@ sdf.describe().show()
 
 #%%
 # Do a random 80:20 train:test hold-out split.
-strain, stest = sdf.randomSplit( [0.8, 0.2], seed=random_seed )
-print( [ strain.count(), len(strain.columns), stest.count(), len(stest.columns) ] )
+# strain, stest = sdf.randomSplit( [0.8, 0.2], seed=random_seed )
+# print( [ strain.count(), len(strain.columns), stest.count(), len(stest.columns) ] )
 
 #%%
 # What are the distributions of the train and test sets?
-strain.groupBy("target").count().show()
-stest.groupBy("target").count().show()
+# strain.groupBy("target").count().show()
+# stest.groupBy("target").count().show()
 
 #%%
 # https://docs.databricks.com/spark/latest/mllib/binary-classification-mllib-pipelines.html
@@ -138,7 +142,7 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import OneHotEncoderEstimator, StringIndexer, VectorAssembler
 
 stages = [] # stages in our Pipeline
-for categoricalCol in strain.columns:
+for categoricalCol in sdf.columns:
     # Category Indexing with StringIndexer: https://spark.apache.org/docs/latest/api/java/org/apache/spark/ml/feature/StringIndexer.html
     #
     # Similarly to H2O's categorical Vec implementation (http://docs.h2o.ai/h2o/latest-stable/h2o-core/javadoc/water/fvec/CategoricalWrappedVec.html),
@@ -163,21 +167,22 @@ for categoricalCol in strain.columns:
 # Convert label into label indices using the StringIndexer
 stages += [ StringIndexer(inputCol="target", outputCol="label") ]
 # Transform all features into a vector using VectorAssembler
-assemblerInputs = list( set(strain.columns) - set(["target"]) )
+assemblerInputs = list( set(sdf.columns) - set(["target"]) )
 assembler = VectorAssembler(inputCols=assemblerInputs, outputCol="features")
 stages += [assembler]
 partialPipeline = Pipeline().setStages( stages )
 
-#%%
-# run the transforms pipeline on the training and testing sets
-strain_preppedDataDF = partialPipeline.fit( strain ).transform( strain )
-strain_preppedDataDF.head(10)
-#%%
-stest_preppedDataDF = partialPipeline.fit( stest ).transform( stest )
-stest_preppedDataDF.head(10)
+# #%%
+# # run the transforms pipeline on the training and testing sets
+# strain_preppedDataDF = partialPipeline.fit( strain ).transform( strain )
+# strain_preppedDataDF.head(5)
+# #%%
+# stest_preppedDataDF = partialPipeline.fit( stest ).transform( stest )
+# stest_preppedDataDF.head(5)
 
 #%%
 from pyspark.ml.classification import LogisticRegression as SparkLogisticRegression
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
 # config the LR algo: https://spark.apache.org/docs/2.2.0/api/python/pyspark.ml.html#pyspark.ml.classification.LogisticRegression
 slr = SparkLogisticRegression( 
@@ -191,46 +196,45 @@ slr = SparkLogisticRegression(
     maxIter=max_iter
     )
 
-# train model
-slrModel = slr.fit( strain_preppedDataDF )
+# # train model
+# slrModel = slr.fit( strain_preppedDataDF )
 
-# gen predictions on training and test sets
-strain_predict = slrModel.transform( strain_preppedDataDF )
-strain_predict.toPandas().head(5)
-#%%
-stest_predict  = slrModel.transform( stest_preppedDataDF )
-stest_predict.toPandas().head(5)
-# stest_predict  = slrModel.select( "target", "prediction" ).show(10)
+# # gen predictions on training and test sets
+# strain_predict = slrModel.transform( strain_preppedDataDF )
+# strain_predict.toPandas().head(5)
+# #%%
+# stest_predict  = slrModel.transform( stest_preppedDataDF )
+# stest_predict.toPandas().head(5)
+
+# #%% [markdown]
+# # #### Spark model hold-out eval: AUROC
+
+# from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+# seval = BinaryClassificationEvaluator( rawPredictionCol = "rawPrediction", labelCol = "target", metricName="areaUnderROC" )
+# print( "AUROC for training set: {}".format( seval.evaluate( strain_predict ) ) )
+# print( "AUROC for test set    : {}".format( seval.evaluate( stest_predict ) ) )  # TODO: only do this once, else we're prone to overfit...
+
+# stest_predict.select( "target", "rawPrediction", "prediction", "probability" ).toPandas().head(5)     # WARNING: .toPandas() collects the DF to a single executor node - will blow-up on big data! But not for this tiny input file.
+
+# #%%
+# # #### Spark model hold-out eval: AUPR
+
+# from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+# seval = BinaryClassificationEvaluator( rawPredictionCol = "rawPrediction", labelCol = "target", metricName="areaUnderPR" )
+# print( "AUPR for training set: {}".format( seval.evaluate( strain_predict ) ) )
+# print( "AUPR for test set    : {}".format( seval.evaluate( stest_predict ) ) )      # TODO: only do this once, else we're prone to overfit...
+
+# stest_predict.select( "target", "rawPrediction", "prediction", "probability" ).toPandas().head(5)     # WARNING: .toPandas() collects the DF to a single executor node - will blow-up on big data! But not for this tiny input file.
 
 #%% [markdown]
-# #### Spark model hold-out eval: AUROC
-
-from pyspark.ml.evaluation import BinaryClassificationEvaluator
-
-seval = BinaryClassificationEvaluator( rawPredictionCol = "rawPrediction", labelCol = "target", metricName="areaUnderROC" )
-print( "AUROC for training set: {}".format( seval.evaluate( strain_predict ) ) )
-print( "AUROC for test set    : {}".format( seval.evaluate( stest_predict ) ) )  # TODO: only do this once, else we're prone to overfit...
-
-stest_predict.select( "target", "rawPrediction", "prediction", "probability" ).toPandas().head(5)     # WARNING: .toPandas() collects the DF to a single executor node - will blow-up on big data! But not for this tiny input file.
+### Now run cross-validation on the Spark classifier.
 
 #%%
-# #### Spark model hold-out eval: AUPR
-
-from pyspark.ml.evaluation import BinaryClassificationEvaluator
-
-seval = BinaryClassificationEvaluator( rawPredictionCol = "rawPrediction", labelCol = "target", metricName="areaUnderPR" )
-print( "AUPR for training set: {}".format( seval.evaluate( strain_predict ) ) )
-print( "AUPR for test set    : {}".format( seval.evaluate( stest_predict ) ) )      # TODO: only do this once, else we're prone to overfit...
-
-stest_predict.select( "target", "rawPrediction", "prediction", "probability" ).toPandas().head(5)     # WARNING: .toPandas() collects the DF to a single executor node - will blow-up on big data! But not for this tiny input file.
-
-#%% [markdown]
-### Also run cross-validation on the Spark classifier.
-
-#%%
-# First, we need to run the pipeline again to do Spark-specific feature matrix transforms.
+# First, we need to run the pipeline on the whole dataframe to do Spark-specific feature matrix transforms.
 sdf_preppedDataDF = partialPipeline.fit( sdf ).transform( sdf )
-sdf_preppedDataDF.head(10)
+sdf_preppedDataDF.head(5)
 
 
 #%%
@@ -238,7 +242,7 @@ sdf_preppedDataDF.head(10)
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 
 # https://spark.apache.org/docs/latest/api/python/pyspark.ml.html?highlight=crossvalidator
-sParamGrid = ParamGridBuilder().addGrid( slr.maxIter , [0,1] ).build()
+sParamGrid = ParamGridBuilder().addGrid( slr.maxIter , [0, 1, 5, 10] ).build()
 
 scvModel = CrossValidator( 
     # training params
@@ -248,6 +252,7 @@ scvModel = CrossValidator(
     evaluator=BinaryClassificationEvaluator(
         metricName="areaUnderROC"    # only 2 metric options for Spark BinaryClassificationEvaluator are AUCROC or AUPR; why no F-Beta, etc.?: https://spark.apache.org/docs/latest/api/python/pyspark.ml.html#pyspark.ml.evaluation.BinaryClassificationEvaluator
     ),
+    numFolds=cv_folds,
     # infrastructure params
     parallelism=threads,
     collectSubModels=True    # new in Spark 2.4. Docs warn of OOM if models are large, but that's unlikely here.
@@ -256,6 +261,29 @@ scvModel = CrossValidator(
 #%%
 # see the CV-generated models ensemble averages
 scvModel.avgMetrics[0]  # the mean AUROC across all crossvalidated Spark LR models.
+
+#%%
+# Use i.e. model.summary() to get summary metrics: https://stackoverflow.com/a/54936081
+# NOTE: The "bestModel" from CrossValidator is defined as "the model with the highest average cross-validation metric across folds": https://spark.apache.org/docs/latest/api/java/index.html?org/apache/spark/ml/tuning/CrossValidatorModel.html
+pp.pprint( list( zip( ["accuracy", "AUROC", "totalIterations", "TPR by label", "FPR by label"] , [ 
+    scvModel.bestModel.summary.accuracy,
+    scvModel.bestModel.summary.areaUnderROC,
+    scvModel.bestModel.summary.totalIterations,
+    scvModel.bestModel.summary.truePositiveRateByLabel,
+    scvModel.bestModel.summary.falsePositiveRateByLabel ]) ) )
+#%%
+# Print and scatterplot the F1-vs-probability threshold curves. Also useful for proba threshold selection by F1 score, so I sort descending to illustrate this.
+scvModel.bestModel.summary.fMeasureByThreshold.orderBy('F-Measure', ascending=[0]).show()
+scvModel.bestModel.summary.fMeasureByThreshold.toPandas().plot()
+#%%
+# Print and scatterplot the precision-recall curves...
+scvModel.bestModel.summary.pr.orderBy('recall', ascending=[0]).show()  # prefer recall, since it accounts for FN in denominator, and FN in heart disease is expensive (death).
+scvModel.bestModel.summary.pr.toPandas().plot()
+#%%
+# Print and scatterplot the ROC curves...
+scvModel.bestModel.summary.roc.show()
+scvModel.bestModel.summary.roc.toPandas().plot()
+
 
 #%%
 # for smiles, what does eval using AUPR return?
@@ -267,14 +295,102 @@ scvModel = CrossValidator(
     evaluator=BinaryClassificationEvaluator(
         metricName="areaUnderPR"    # only 2 metric options for Spark BinaryClassificationEvaluator are AUCROC or AUPR; why no F-Beta, etc.?: https://spark.apache.org/docs/latest/api/python/pyspark.ml.html#pyspark.ml.evaluation.BinaryClassificationEvaluator ; Scala source: https://github.com/apache/spark/blob/v2.4.3/mllib/src/main/scala/org/apache/spark/ml/evaluation/BinaryClassificationEvaluator.scala#L86-L89
     ),
+    numFolds=cv_folds,
     # infrastructure params
     parallelism=threads,
     collectSubModels=True    # new in Spark 2.4. Docs warn of OOM if models are large, but that's unlikely here.
     ).fit( sdf_preppedDataDF )   # k-fold crossvalidation is usually done on the whole dataset, not training or hold-out testing...
 scvModel.avgMetrics[0]      # the mean AUPR across all crossvalidated Spark LR models.
 
+#%%
+# Use i.e. model.summary() to get summary metrics: https://stackoverflow.com/a/54936081
+# NOTE: The "bestModel" from CrossValidator is defined as "the model with the highest average cross-validation metric across folds": https://spark.apache.org/docs/latest/api/java/index.html?org/apache/spark/ml/tuning/CrossValidatorModel.html
+pp.pprint( list( zip( ["accuracy", "AUROC", "totalIterations", "TPR by label", "FPR by label"] , [ 
+    scvModel.bestModel.summary.accuracy,
+    scvModel.bestModel.summary.areaUnderROC,
+    scvModel.bestModel.summary.totalIterations,
+    scvModel.bestModel.summary.truePositiveRateByLabel,
+    scvModel.bestModel.summary.falsePositiveRateByLabel ]) ) )
+#%%
+# Print and scatterplot the F1-vs-probability threshold curves. Also useful for proba threshold selection by F1 score, so I sort descending to illustrate this.
+scvModel.bestModel.summary.fMeasureByThreshold.orderBy('F-Measure', ascending=[0]).show()
+scvModel.bestModel.summary.fMeasureByThreshold.toPandas().plot()
+#%%
+# Print and scatterplot the precision-recall curves...
+scvModel.bestModel.summary.pr.orderBy('recall', ascending=[0]).show()  # prefer recall, since it accounts for FN in denominator, and FN in heart disease is expensive (death).
+scvModel.bestModel.summary.pr.toPandas().plot()
+#%%
+# Print and scatterplot the ROC curves...
+scvModel.bestModel.summary.roc.show()
+scvModel.bestModel.summary.roc.toPandas().plot()
+
 
 #%% [markdown]
 ### What we learned via modeling with Spark + MLLib:
 ###### 1. Observed example that the train and test sets, if randomly selected, can have label distributions that are biased differently (train having more 1s, test having more 0s). ==> Training set isn't representative of the testing set --> likely model unreliability & relatively lower accuracy on the test set. ==> Altogether arguments for using k-fold crossvalidation, not (only) hold-out testing.
-###### 2. 
+###### 2. AUC in the Spark model is so substantially lower than in the sklearn model that I'm nearly certain I've done something wrong. Let's see if I can get a more similar result?
+
+#%% [markdown]
+### Spark logistic regression, round 2
+
+#%%
+# try new params
+sParamGrid = ParamGridBuilder() \
+    .addGrid( slr.maxIter , [0, 1, 5, 10] ) \
+    .addGrid( slr.elasticNetParam, [ 0.1, 0.3, 0.5, 0.7, 0.9 ] ) \
+    .build()
+
+# redefine the model
+slr = SparkLogisticRegression( 
+    # training params
+    labelCol = "label",
+    featuresCol = "features",
+    elasticNetParam = elasticnet_l1l2_regularization_alpha,
+    # validation params
+    # (none?)
+    # infrastructure params
+    maxIter=max_iter
+    )
+
+# retrain and cross-validate the model
+scvModel = CrossValidator( 
+    # training params
+    estimator=slr,
+    estimatorParamMaps=sParamGrid, 
+    # validation params
+    evaluator=BinaryClassificationEvaluator(
+        metricName="areaUnderROC"    # only 2 metric options for Spark BinaryClassificationEvaluator are AUCROC or AUPR; why no F-Beta, etc.?: https://spark.apache.org/docs/latest/api/python/pyspark.ml.html#pyspark.ml.evaluation.BinaryClassificationEvaluator ; Scala source: https://github.com/apache/spark/blob/v2.4.3/mllib/src/main/scala/org/apache/spark/ml/evaluation/BinaryClassificationEvaluator.scala#L86-L89
+    ),
+    numFolds=cv_folds,
+    # infrastructure params
+    parallelism=threads,
+    collectSubModels=True    # new in Spark 2.4. Docs warn of OOM if models are large, but that's unlikely here.
+    ).fit( sdf_preppedDataDF )   # k-fold crossvalidation is usually done on the whole dataset, not training or hold-out testing...
+scvModel.avgMetrics[0]      # the mean AUROC across all crossvalidated Spark LR models.
+
+#%%
+# Use i.e. model.summary() to get summary metrics: https://stackoverflow.com/a/54936081
+# NOTE: The "bestModel" from CrossValidator is defined as "the model with the highest average cross-validation metric across folds": https://spark.apache.org/docs/latest/api/java/index.html?org/apache/spark/ml/tuning/CrossValidatorModel.html
+pp.pprint( list( zip( ["accuracy", "AUROC", "totalIterations", "TPR by label", "FPR by label"] , [ 
+    scvModel.bestModel.summary.accuracy,
+    scvModel.bestModel.summary.areaUnderROC,
+    scvModel.bestModel.summary.totalIterations,
+    scvModel.bestModel.summary.truePositiveRateByLabel,
+    scvModel.bestModel.summary.falsePositiveRateByLabel ]) ) )
+#%%
+# Print and scatterplot the F1-vs-probability threshold curves. Also useful for proba threshold selection by F1 score, so I sort descending to illustrate this.
+scvModel.bestModel.summary.fMeasureByThreshold.orderBy('F-Measure', ascending=[0]).show()
+scvModel.bestModel.summary.fMeasureByThreshold.toPandas().plot()
+#%%
+# Print and scatterplot the precision-recall curves...
+scvModel.bestModel.summary.pr.orderBy('recall', ascending=[0]).show()  # prefer recall, since it accounts for FN in denominator, and FN in heart disease is expensive (death).
+scvModel.bestModel.summary.pr.toPandas().plot()
+#%%
+# Print and scatterplot the ROC curves...
+scvModel.bestModel.summary.roc.show()
+scvModel.bestModel.summary.roc.toPandas().plot()
+
+#%% [markdown]
+### What we learned in Spark logistic regression, round 2:
+###### 1. Observed example that the train and test sets, if randomly selected, can have label distributions that are biased differently (train having more 1s, test having more 0s). ==> Training set isn't representative of the testing set --> likely model unreliability & relatively lower accuracy on the test set. ==> Altogether arguments for using k-fold crossvalidation, not (only) hold-out testing.
+###### 2. AUC in the Spark model is so substantially lower than in the sklearn model that I'm nearly certain I've done something wrong. Let's see if I can get a more similar result?
