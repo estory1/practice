@@ -20,6 +20,11 @@ print( "module versions: " + str([ pyspark.__version__ , sklearn.__version__ , p
 
 pp = pprint.PrettyPrinter(indent=2)
 
+pd.set_option("display.max_rows", 100)
+pd.set_option("display.max_columns", 100)
+pd.set_option("display.expand_frame_repr", True)
+
+
 #%% [markdown]
 ### Shared training parameters
 #%%
@@ -35,7 +40,12 @@ df = pd.read_csv(filepath)
 df.head()
 
 #%%
+# summary stats
 df.describe()
+
+#%%
+# 1) what's our class distribution? 2) what are some useful distributional facts about each class?
+df.groupby(by=["target"]).describe()
 
 #%% [markdown]
 # ## sklearn
@@ -392,5 +402,12 @@ scvModel.bestModel.summary.roc.toPandas().plot()
 
 #%% [markdown]
 ### What we learned in Spark logistic regression, round 2:
-###### 1. Observed example that the train and test sets, if randomly selected, can have label distributions that are biased differently (train having more 1s, test having more 0s). ==> Training set isn't representative of the testing set --> likely model unreliability & relatively lower accuracy on the test set. ==> Altogether arguments for using k-fold crossvalidation, not (only) hold-out testing.
-###### 2. AUC in the Spark model is so substantially lower than in the sklearn model that I'm nearly certain I've done something wrong. Let's see if I can get a more similar result?
+###### 1. AUROC increased, but only by ~0.015.
+###### 2. Training time was much higher than in round 1, due to grid-search over a larger parameter space, including a larger number of iterations.
+###### 3. Accuracy dramatically improved, from 0.69 to 0.85.
+###### 4. Average AUROC in `avgMetrics[0]` increased very dramatically, from 0.5 to 0.89.
+###### 5. In short, trying different weights in the ElasticNet alpha (regularization) term, and more training iterations, yielded very substantial improvements.
+###### 6. We also see that the downward slope of the `threshold` curve in the F-Measure (F1) chart looks much steeper earlier in the x-axis now.
+###### 
+
+# %%
