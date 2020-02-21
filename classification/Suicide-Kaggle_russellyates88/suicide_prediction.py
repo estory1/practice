@@ -443,7 +443,7 @@ pd.DataFrame({
 #%% [markdown]
 ### How to do better?
 #
-# 1) Remind that all my modeled features so far are purely numeric. This is convenient, but excludes probably-useful features like age and sex and generation.
+# 1) Recall that all my modeled features so far are purely numeric. This is convenient, but excludes probably-useful features like age and sex and generation.
 #
 # Of course, OLS no longer applies; now I must use a model that can take categorical variables, like logistic regression.
 #
@@ -463,9 +463,61 @@ print( "RF model R^2: {}".format( rfrEvaluator.evaluate( rfrPreds ) ) )
 #
 
 #%% [markdown]
-## Stopping for now - my goal of showing how regression analysis (at least basic regression...) can be done in both scikit-learn and Spark (via PySpark) is achieved.
-### But clearly there is more that could be done here!
-#### And I may return to this project later to do so...
+# # Keras regression, round 1
+#
+##### Inspired by: https://machinelearningmastery.com/regression-tutorial-keras-deep-learning-library-python/
 
+# %%
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# %%
+k_X = dfn[ list( set(dfn.columns) - set(["suicides/100k pop"]) ) ].values
+k_y = dfn[ "suicides/100k pop" ].values
+k_X_trn, k_X_tst, k_y_trn, k_y_tst = train_test_split(k_X, k_y, test_size=0.2, random_state=random_seed)
+print([ k_X.shape , k_y.shape , k_X_trn.shape, k_X_tst.shape, k_y_trn.shape, k_y_tst.shape ])
+
+#%%
+# R^2 implementation: https://stackoverflow.com/a/46969576
+from keras import backend as K
+from keras import losses
+from sklearn.metrics import accuracy_score
+
+def coeff_determination(y_true, y_pred):
+    """Returns the R^2 value of regression predictions."""
+    from keras import backend as K
+    SS_res =  K.sum(K.square( y_true-y_pred ))
+    SS_tot = K.sum(K.square( y_true - K.mean(y_true) ) )
+    return ( 1 - SS_res/(SS_tot + K.epsilon()) )
+    
+# define base model
+def baseline_model():
+    # create model
+    model = Sequential()
+    model.add(Dense(5, input_dim=5, kernel_initializer='glorot_uniform', activation='relu'))
+    model.add(Dense(1, kernel_initializer='glorot_uniform'))
+    # Compile model
+    # model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss=coeff_determination, optimizer='adam')
+    # model.compile(loss='mean_squared_error', optimizer='adam', metrics=[accuracy, coeff_determination])
+    # model.compile( loss=losses.mean_absolute_percentage_error , optimizer='adam')
+    return model
+
+k_estimator = KerasRegressor( build_fn=baseline_model, epochs=5, batch_size=5, verbose=0 )
+kfold = KFold( n_splits=10 )
+results = cross_val_score( k_estimator, k_X_trn, k_y_trn, cv=kfold )
+# print("Results: %.2f (%.2f) MSE" % ( results.mean(), results.std()) )
+print("Results: %.2f (%.2f) R^2" % ( results.mean(), results.std()) )  # TODO: WTF is wrong w/ R^2 result???!
+# print("Results: %.2f (%.2f) MAPE" % ( results.mean(), results.std()) )  # TODO: WTF is wrong w/ MAPE result too???!
+
+#%%
+k_estimator.fit( k_X_trn , k_y_trn )
+k_pred = k_estimator.predict( k_X_tst )
+accuracy_score( k_y_tst , k_pred )
 
 # %%
