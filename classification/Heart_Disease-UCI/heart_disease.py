@@ -2,6 +2,7 @@
 # # Predict heart disease using:
 # 1. sklearn
 # 2. Spark + MLlib
+# 3. PyTorch
 #
 ### Why?
 # 1. Illustrate same solution, different tech.
@@ -14,7 +15,6 @@ import numpy as np
 import pandas as pd 
 import sklearn
 import pyspark
-from pyspark import SparkContext
 
 print( "module versions: " + str([ pyspark.__version__ , sklearn.__version__ , pd.__version__ , np.__version__ ]) )
 
@@ -46,6 +46,10 @@ df.describe()
 #%%
 # 1) what's our class distribution? 2) what are some useful distributional facts about each class?
 df.groupby(by=["target"]).describe()
+
+
+
+
 
 #%% [markdown]
 # ## sklearn
@@ -111,23 +115,32 @@ confusion_matrix( y, clf.predict(X) )
 
 
 
+
+
 #%% [markdown]
 # ## Spark logistic regression, round 1
 #%%
-# https://spark.apache.org/docs/2.1.0/ml-classification-regression.html#binomial-logistic-regression
 # import findspark
 # findspark.init()
 
+#%%
+# https://spark.apache.org/docs/2.1.0/ml-classification-regression.html#binomial-logistic-regression
+# from pyspark import SparkContext
+from pyspark.sql import SparkSession
+
 if "spark" in dir() and spark is not None:
     spark.stop()
-spark = SparkContext(appName="heart")
+# spark = SparkContext(appName="heart")
+spark = SparkSession.builder \
+    .master("local[8]").appName("heart").getOrCreate()
 
 # dfs = spark.read.format('com.databricks.spark.csv').load(filepath)
 
 # just reuse the existing pandas DF...
-from pyspark.sql import SQLContext
-sqlContext = SQLContext(spark)
-sdf = sqlContext.createDataFrame(df)
+# from pyspark.sql import SQLContext
+# sqlContext = SQLContext(spark)
+# sdf = sqlContext.createDataFrame(df)
+sdf = spark.createDataFrame(df)
 sdf.head(5)
 
 #%%
@@ -149,7 +162,8 @@ sdf.describe().show()
 # Spark needs all feature col values in a single vector in col1, and the label/target in col2.
 # Weird, lame data-eng flow; I already have column vecs of my data in `sdf`, as indicated in my DF shape array after train-test split...
 from pyspark.ml import Pipeline
-from pyspark.ml.feature import OneHotEncoderEstimator, StringIndexer, VectorAssembler
+# Spark 2.4: from pyspark.ml.feature import OneHotEncoderEstimator, StringIndexer, VectorAssembler
+from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
 
 stages = [] # stages in our Pipeline
 for categoricalCol in sdf.columns:
@@ -171,7 +185,10 @@ for categoricalCol in sdf.columns:
     stringIndexer = StringIndexer(inputCol=categoricalCol, outputCol=categoricalCol + "Index")
     # Use OneHotEncoder to convert categorical variables into binary SparseVectors
     # encoder = OneHotEncoderEstimator(inputCol=categoricalCol + "Index", outputCol=categoricalCol + "classVec")
-    encoder = OneHotEncoderEstimator(inputCols=[stringIndexer.getOutputCol()], outputCols=[categoricalCol + "classVec"])
+    # Spark v2.4: encoder = OneHotEncoderEstimator(inputCols=[stringIndexer.getOutputCol()], outputCols=[categoricalCol + "classVec"])
+    # Spark v3.0: API changed: https://stackoverflow.com/a/59926851
+    encoder = OneHotEncoder(dropLast=False, inputCol=stringIndexer.getOutputCol(), outputCol=categoricalCol + "classVec")
+    # model = encoder.fit()
     # Add stages.  These are not run here, but will run all at once later on.
     stages += [stringIndexer, encoder]
 # Convert label into label indices using the StringIndexer
@@ -289,6 +306,7 @@ scvModel.bestModel.summary.fMeasureByThreshold.toPandas().plot()
 # Print and scatterplot the precision-recall curves...
 scvModel.bestModel.summary.pr.orderBy('recall', ascending=[0]).show()  # prefer recall, since it accounts for FN in denominator, and FN in heart disease is expensive (death).
 scvModel.bestModel.summary.pr.toPandas().plot()
+
 #%%
 # Print and scatterplot the ROC curves...
 scvModel.bestModel.summary.roc.show()
@@ -409,5 +427,85 @@ scvModel.bestModel.summary.roc.toPandas().plot()
 ###### 5. In short, trying different weights in the ElasticNet alpha (regularization) term, and more training iterations, yielded very substantial improvements.
 ###### 6. We also see that the downward slope of the `threshold` curve in the F-Measure (F1) chart looks much steeper earlier in the x-axis now.
 ###### 
+
+
+
+
+
+# %% [markdown]
+### PyTorch logistic regression, round 1
+
+#%%
+# starting with this as a guide: https://medium.com/biaslyai/pytorch-linear-and-logistic-regression-models-5c5f0da2cb9
+
+import torch
+from torch.autograd import Variable
+from torch.nn import functional as F
+
+from sklearn.model_selection import train_test_split
+
+# TODO: split df rows into a hold-out test set (or better: do k-fold CV)
+torch_trn_X, torch_tst_X, torch_trn_y, torch_tst_y = train_test_split( df[ list(set(df.columns) - set(["target"])) ] , df["target"] , test_size=0.2, random_state = random_seed )
+torch_trn = np.zeros( ( torch_trn_X.shape[0] , torch_trn_X.shape[1] + 1 ) )
+torch_trn[ : , :-1 ] = torch_trn_X
+torch_trn[ : ,  -1 ] = torch_trn_y
+print( torch_trn.shape )
+torch_trn
+#%%
+torch_trn = torch.from_numpy( torch_trn )  # copy from the the dataset already in RAM, loaded by Pandas...
+torch_tst = torch.from_numpy( df.values )  # copy from the the dataset already in RAM, loaded by Pandas...
+
+torch_trn_n = len( torch_trn[ : , 0 ] ) 
+torch_trn_m = len( torch_trn[ 0 , : ] )
+print( "torch_train shape: {}x{}:".format( torch_trn_n , torch_trn_m ) )
+print( torch_trn )
+
+# %%
+# explore PyTorch usage a little.
+print( torch_trn[0] )     # first row
+print( torch_trn[:,0] )   # first col (age)
+
+# %%
+# apparently we must define our own class for logistic regression...
+class TorchLogisticRegression( torch.nn.Module ):
+    def __init__(self):
+        super(TorchLogisticRegression, self).__init__()
+        self.linear = torch.nn.Linear( torch_trn_m - 2 , 1 )     # matrix must represent the *transposed* dimensions of 1 sample: some row vector x in matrix X, excluding the target column.
+    
+    def forward( self, x ):
+        y_pred = F.sigmoid( self.linear(x) )                 # could use other activation functions here - Tanh, ReLU, etc.
+        return y_pred
+
+torch_model = TorchLogisticRegression()
+
+# also need to define a loss function... the tutorial uses Binary Cross-Entropy. Try it for now, but why not some other, more common criterion, like RMSE, AUC, F-Beta, etc.?
+torch_criterion = torch.nn.BCELoss( size_average=True )
+
+# need an optimizer, of course... the tutorial chose ordinary SGD.
+torch_learning_rate = 0.01
+torch_optimizer = torch.optim.SGD( torch_model.parameters() , lr=torch_learning_rate )
+
+# %%
+# now we train the model!
+torch_n_epochs = 20
+for epoch in range( torch_n_epochs ):
+    
+    torch_model.train()             # train the model
+    torch_optimizer.zero_grad()     # start with gradients at 0
+
+    # we're using feedforward neural net structure, so we compute a forward pass.
+    # NOTE: Without .float(), I get 'RuntimeError: Expected object of scalar type Float but got scalar type Double for argument #4 'mat1''.
+    y_pred = torch_model( torch_trn[ : , 0 : torch_trn_m - 2 ].float() )  # -1 for 0-based indexing, -1 because the last column contains the target.
+
+    # print( "shape of y_pred: [{}, {}]".format( torch_n , torch_m - 1 ] ) ) )
+
+    # calc loss on this training epoch.
+    loss = torch_criterion( y_pred , torch_trn[ : , torch_trn_m - 1 ].float() )
+    print( "loss (epoch: {}): {}".format( epoch, loss ) )
+
+    # model parameter update, aka backward pass (NN update on errors (backpropagation))
+    loss.backward()
+    torch_optimizer.step()
+
 
 # %%
