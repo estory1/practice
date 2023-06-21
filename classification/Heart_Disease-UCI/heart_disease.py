@@ -8,6 +8,7 @@
 # 1. Illustrate same solution, different tech.
 # 2. Surface differences and limitations. Useful as a technologist for implementation capability breadth, but also some disciplines require calculation using multiple technologies.
 # 3. Python+pandas+sklearn makes most ML jobs relatively easy.
+from functools import reduce
 import os
 import sys
 import pprint
@@ -30,7 +31,7 @@ pd.set_option("display.expand_frame_repr", True)
 #%%
 random_seed = 0
 cv_folds = 5
-threads = 8
+threads = 10
 max_iter = 1000000
 elasticnet_l1l2_regularization_alpha = 0.3  # In both sklearn and Spark, 0 ==> Ridge, 1 ==> LASSO. Given that LASSO shrinks feature coefficients (doing i.e. weighting features; https://towardsdatascience.com/l1-and-l2-regularization-methods-ce25e7fc831c), and I've already few (13) features, I'll bias this term towards Ridge.
 
@@ -132,7 +133,7 @@ if "spark" in dir() and spark is not None:
     spark.stop()
 # spark = SparkContext(appName="heart")
 spark = SparkSession.builder \
-    .master("local[8]").appName("heart").getOrCreate()
+    .master(f"local[{threads}]").appName("heart").getOrCreate()
 
 # dfs = spark.read.format('com.databricks.spark.csv').load(filepath)
 
@@ -444,16 +445,51 @@ from torch.nn import functional as F
 
 from sklearn.model_selection import train_test_split
 
-# TODO: split df rows into a hold-out test set (or better: do k-fold CV)
-torch_trn_X, torch_tst_X, torch_trn_y, torch_tst_y = train_test_split( df[ list(set(df.columns) - set(["target"])) ] , df["target"] , test_size=0.2, random_state = random_seed )
-torch_trn = np.zeros( ( torch_trn_X.shape[0] , torch_trn_X.shape[1] + 1 ) )
-torch_trn[ : , :-1 ] = torch_trn_X
-torch_trn[ : ,  -1 ] = torch_trn_y
+print( "module versions: " + str([ torch.__version__ ]) )
+
+
+# # TODO: split df rows into a hold-out test set (or better: do k-fold CV)
+# torch_trn_X, torch_tst_X, torch_trn_y, torch_tst_y = train_test_split( df[ list(set(df.columns) - set(["target"])) ] , df["target"] , test_size=0.2, random_state = random_seed )
+# torch_trn = np.zeros( ( torch_trn_X.shape[0] , torch_trn_X.shape[1] + 1 ) )
+# torch_trn[ : , :-1 ] = torch_trn_X
+# torch_trn[ : ,  -1 ] = torch_trn_y
+# print( torch_trn.shape )
+# torch_trn
+# #%%
+# torch_trn = torch.from_numpy( torch_trn )  # copy from the the dataset already in RAM, loaded by Pandas...
+# torch_tst = torch.from_numpy( df.values )  # copy from the the dataset already in RAM, loaded by Pandas...
+
+# torch_trn_n = len( torch_trn[ : , 0 ] ) 
+# torch_trn_m = len( torch_trn[ 0 , : ] )
+# print( "torch_train shape: {}x{}:".format( torch_trn_n , torch_trn_m ) )
+# print( torch_trn )
+
+# # %%
+# # explore PyTorch usage a little.
+# print( torch_trn[0] )     # first row
+# print( torch_trn[:,0] )   # first col (age)
+
+
+# %% [markdown]
+### First step: min-max scale the features...
+#%%
+from sklearn.preprocessing import MinMaxScaler
+df_norm = pd.DataFrame( MinMaxScaler().fit_transform(df) , columns = df.columns )
+df_norm.describe()
+# %%
+df_norm_trn_X, df_norm_tst_X, df_norm_trn_y, df_norm_tst_y = train_test_split( 
+    df_norm[ list(set(df_norm.columns) - set(["target"])) ] , 
+    df_norm["target"] ,
+    test_size=0.2, 
+    random_state = random_seed )
+torch_trn = np.zeros( ( df_norm_trn_X.shape[0] , df_norm_trn_X.shape[1] + 1 ) )
+torch_trn[ : , :-1 ] = df_norm_trn_X
+torch_trn[ : ,  -1 ] = df_norm_trn_y
 print( torch_trn.shape )
 torch_trn
 #%%
 torch_trn = torch.from_numpy( torch_trn )  # copy from the the dataset already in RAM, loaded by Pandas...
-torch_tst = torch.from_numpy( df.values )  # copy from the the dataset already in RAM, loaded by Pandas...
+torch_tst = torch.from_numpy( df_norm.values )  # copy from the the dataset already in RAM, loaded by Pandas...
 
 torch_trn_n = len( torch_trn[ : , 0 ] ) 
 torch_trn_m = len( torch_trn[ 0 , : ] )
@@ -465,8 +501,9 @@ print( torch_trn )
 print( torch_trn[0] )     # first row
 print( torch_trn[:,0] )   # first col (age)
 
+
 # %%
-# apparently we must define our own class for logistic regression...
+# PyTorch is a neural net modeling lib, and logistic regression can be modeled using NN constructs. We must define our own class for logistic regression...
 class TorchLogisticRegression( torch.nn.Module ):
     def __init__(self):
         super(TorchLogisticRegression, self).__init__()
@@ -474,12 +511,15 @@ class TorchLogisticRegression( torch.nn.Module ):
     
     def forward( self, x ):
         y_pred = F.sigmoid( self.linear(x) )                 # could use other activation functions here - Tanh, ReLU, etc.
+        # print( self.linear(x) )
+        # y_pred = F.softmax( self.linear(x) )                 # could use other activation functions here - Tanh, ReLU, etc.
+        # y_pred = F.log_softmax(self.linear(x) )
         return y_pred
 
 torch_model = TorchLogisticRegression()
 
 # also need to define a loss function... the tutorial uses Binary Cross-Entropy. Try it for now, but why not some other, more common criterion, like RMSE, AUC, F-Beta, etc.?
-torch_criterion = torch.nn.BCELoss( size_average=True )
+torch_criterion = torch.nn.BCELoss( size_average=True, reduce="sum" )  # wrt reduce: "sum" yields smaller loss than "mean" and None.
 
 # need an optimizer, of course... the tutorial chose ordinary SGD.
 torch_learning_rate = 0.01
@@ -487,7 +527,7 @@ torch_optimizer = torch.optim.SGD( torch_model.parameters() , lr=torch_learning_
 
 # %%
 # now we train the model!
-torch_n_epochs = 20
+torch_n_epochs = 10000
 for epoch in range( torch_n_epochs ):
     
     torch_model.train()             # train the model
@@ -500,12 +540,44 @@ for epoch in range( torch_n_epochs ):
     # print( "shape of y_pred: [{}, {}]".format( torch_n , torch_m - 1 ] ) ) )
 
     # calc loss on this training epoch.
-    loss = torch_criterion( y_pred , torch_trn[ : , torch_trn_m - 1 ].float() )
-    print( "loss (epoch: {}): {}".format( epoch, loss ) )
+    # loss = torch_criterion( y_pred , torch_trn[ : , torch_trn_m - 1 ].float() )
+    loss = torch_criterion( y_pred , torch_trn[ : , torch_trn_m - 1 ].unsqueeze(1).float() )  # PyTorch 1.6 -> 1.7: API changed s.t. my [242] matrix must be "unsqueezed" to [242,1]: https://stackoverflow.com/a/57802321 and https://pytorch.org/docs/stable/generated/torch.unsqueeze.html
+    if epoch % (torch_n_epochs/10) == 0: print( "loss (epoch: {}): {}".format( epoch, loss ) )
 
     # model parameter update, aka backward pass (NN update on errors (backpropagation))
     loss.backward()
     torch_optimizer.step()
 
+# %%
+# Now let's try predicting using our trained model.
+torch_tst_X = np.zeros( ( 1 , df_norm_tst_X.shape[1] - 1 ) )
+torch_tst_X = torch.from_numpy( np.array( df_norm_tst_X.iloc[ 0, : 0:-1 ] ) )    # take first row, exclude target col
+torch_tst_y = torch.from_numpy( np.array( df_norm_tst_X.iloc[ 0, -1 ] ) )    # take first row, only target col
+print("torch_tst_X.shape: " + str(torch_tst_X.shape))
+print("torch_tst_X: " + str(torch_tst_X))
+print("torch_tst_y: " + str(torch_tst_y))
 
+print()
+torch_model_pred = torch_model( torch_tst_X.float() )  # `.float()` (unless you `.eval()` the model first! Then `.float()` is not needed.) because else "RuntimeError: expected scalar type Double but found Float": https://stackoverflow.com/a/56741419
+print( "Given input sample X[0] ({}), model outputs y_pred = {} against sample's y_target class = {}".format( 
+    torch_tst_X , torch_model_pred , torch_tst_y ) )
+print()
+
+from torchinfo import summary  # https://github.com/TylerYep/torchinfo
+print("Model summary:")
+print( summary( torch_model , verbose=2 ) )
+
+# %%
+# Now let's predict each of the samples in the test set.
+torch_tst_X = np.zeros( ( 1 , df_norm_tst_X.shape[1] - 1 ) )
+torch_tst_X = torch.from_numpy( np.array( df_norm_tst_X.iloc[ : , : 0:-1 ] ) )    # take first row, exclude target col
+torch_tst_y = torch.from_numpy( np.array( df_norm_tst_X.iloc[ : , -1 ] ) )    # take first row, only target col
+print("torch_tst_X.shape: " + str(torch_tst_X.shape))
+# print("torch_tst_X: " + str(torch_tst_X))
+# print("torch_tst_y: " + str(torch_tst_y))
+
+print()
+torch_model_pred = torch_model( torch_tst_X.float() )  # `.float()` (unless you `.eval()` the model first! Then `.float()` is not needed.) because else "RuntimeError: expected scalar type Double but found Float": https://stackoverflow.com/a/56741419
+print( "Given input sample X[0:5], excluding the rest ({}), model outputs y_pred = {} against sample's y_target class = {}".format( 
+    torch_tst_X[0:5] , torch_model_pred , torch_tst_y ) )
 # %%
