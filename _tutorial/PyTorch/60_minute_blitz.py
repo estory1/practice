@@ -126,7 +126,7 @@ print(z, out)
 
 #%%
 a = torch.randn(2,2)
-a = ((a*3) / (a-1))k
+a = ((a*3) / (a-1))
 print(a.requires_grad)
 a.requires_grad_(True)
 print(a.requires_grad)
@@ -285,7 +285,7 @@ print(output)
 import torch
 import torchvision
 import torchvision.transforms as transforms
-
+import pathlib
 
 #%%
 transform = transforms.Compose(
@@ -295,10 +295,10 @@ transform = transforms.Compose(
 data_root_path = str(pathlib.Path.home()) + "/Documents/syncable/home/dev/data_science/practice/PyTorch/data"
 
 trainset    = torchvision.datasets.CIFAR10( root=data_root_path, train=True, download=True, transform=transform )
-trainloader = torch.utils.data.DataLoader( trainset, batch_size=4, shuffle=True, num_workers=2 )
+trainloader = torch.utils.data.DataLoader( trainset, batch_size=4, shuffle=True, num_workers=0 )  # num_workers=2 until Python3.11 RuntimeError; changed to 0, see: https://stackoverflow.com/a/66845956
 
 testset    = torchvision.datasets.CIFAR10( root=data_root_path, train=False, download=True, transform=transform )
-testloader = torch.utils.data.DataLoader( testset, batch_size=4, shuffle=False, num_workers=2 )
+testloader = torch.utils.data.DataLoader( testset, batch_size=4, shuffle=False, num_workers=0 )  # num_workers=2 until Python3.11 RuntimeError; changed to 0, see: https://stackoverflow.com/a/66845956
 
 classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')

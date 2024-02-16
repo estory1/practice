@@ -96,8 +96,10 @@ n
 
 #%%
 ks_rslt = stats.kstest( avg_per_student , n.cdf )  # throws "ValueError: operands could not be broadcast together with shapes (300,) (2,)". ==> Dot-product dimensionality error... But what to do differently?
-print("Kolmogorov-Smirnov returns: statistic={} at p-value={} ==> {}reject the H0 that the data are drawn from a Gaussian.".format( str( ks_rslt.statistic ) , str( ks_rslt.pvalue ) , "" if ks_rslt.pvalue < alpha else "fail to " ))
-
+print("Kolmogorov-Smirnov returns: statistic={} at p-value={} ==> {}reject the H0 that the data are drawn from a Gaussian.".format( 
+    str( ks_rslt.statistic ) , 
+    str( ks_rslt.pvalue ) , 
+    "" if ks_rslt.pvalue < alpha else "fail to " ))
 
 #%% [markdown]
 # Okay, giving-up on Kolmogorov-Smirnov for now, getting `ValueError: operands could not be broadcast together with shapes (300,) (2,)`...
@@ -119,3 +121,12 @@ print("Kolmogorov-Smirnov returns: statistic={} at p-value={} ==> {}reject the H
 # 2. **The more data we collect, the more probably we will encounter rare values.** ("Law of Truly Large Numbers") This increases the likelihood that we're modeling a representative set of data.
 # 3. **The more data we collect, the more accurate that mean values of any feature will be representative of that feature.**
 
+#%%
+# data science study cards say that "random samples of the mean converge to a normal distribution with mean u and stddev sigma / sqrt(N)"
+for i in range(0, 5):
+    sample = np.random.choice( np.array( avg_per_student ) , 5 , replace=False )
+    # print(sample)
+    print([ round(np.mean(sample),2) , round(np.std(sample),2) , round(np.std(sample) / math.sqrt( len(sample) ), 2 ) ])
+
+# %%
+[ n.mean() , n.std() ]
