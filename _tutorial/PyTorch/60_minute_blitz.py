@@ -292,7 +292,7 @@ transform = transforms.Compose(
     [   transforms.ToTensor(),
         transforms.Normalize( (0.5,0.5,0.5), (0.5,0.5,0.5) ) ] )
 
-data_root_path = str(pathlib.Path.home()) + "/Documents/syncable/home/dev/data_science/practice/PyTorch/data"
+data_root_path = "data"
 
 trainset    = torchvision.datasets.CIFAR10( root=data_root_path, train=True, download=True, transform=transform )
 trainloader = torch.utils.data.DataLoader( trainset, batch_size=4, shuffle=True, num_workers=0 )  # num_workers=2 until Python3.11 RuntimeError; changed to 0, see: https://stackoverflow.com/a/66845956
@@ -315,7 +315,7 @@ def imshow(img):
 
 # get random training images
 dataiter = iter(trainloader)
-images, labels = dataiter.next()
+images, labels = next(dataiter)
 
 # show images
 imshow( torchvision.utils.make_grid(images) )
@@ -391,7 +391,7 @@ print('Finished Training')
 
 #%%
 dataiter = iter(testloader)
-images, labels = dataiter.next()
+images, labels = next(dataiter)#.next()
 
 # print images
 imshow(torchvision.utils.make_grid(images))

@@ -36,7 +36,7 @@ max_iter = 1000000
 elasticnet_l1l2_regularization_alpha = 0.3  # In both sklearn and Spark, 0 ==> Ridge, 1 ==> LASSO. Given that LASSO shrinks feature coefficients (doing i.e. weighting features; https://towardsdatascience.com/l1-and-l2-regularization-methods-ce25e7fc831c), and I've already few (13) features, I'll bias this term towards Ridge.
 
 #%%
-filepath = os.path.expanduser("~") + "/Documents/syncable/home/dev/data_science/practice/classification/Heart_Disease-UCI/heart.csv"
+filepath = "heart.csv"
 df = pd.read_csv(filepath)
 df.head()
 

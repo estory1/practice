@@ -37,7 +37,7 @@ elasticnet_l1l2_regularization_alpha = 0.3  # In both sklearn and Spark, 0 ==> R
 train_split_pct = 0.8
 
 #%%
-filepath = os.path.expanduser("~") + "/Documents/syncable/home/dev/data_science/practice/classification/Suicide-Kaggle_russellyates88/suicide-rates-overview-1985-to-2016.zip"
+filepath = "suicide-rates-overview-1985-to-2016.zip"
 df = pd.read_csv(filepath)
 df = df.dropna()
 df.head()
@@ -104,7 +104,7 @@ plot_square_mat( pd.DataFrame( cov.covariance_ , columns=dfn.columns ) , len( co
 
 #%% [markdown]
 #### Oh....
-# A population rate strongly covaries with population? Stunning find!
+# No surprise: a population rate strongly covaries with population.
 #
 # Let's throw out `suicides/100k pop` and try again:
 
@@ -124,7 +124,6 @@ plot_square_mat( pd.DataFrame( EmpiricalCovariance().fit( dfn[ covcols ] ).covar
 def regress( df, y_col, x_cols ):
     X, Y = get_training_set(df, y_col, x_cols)
 
-    #%%
     from sklearn.model_selection import KFold
     from sklearn import linear_model
     from sklearn.metrics import r2_score, mean_squared_error
@@ -181,7 +180,7 @@ def get_training_set(df, y_col, x_cols):
 regress( df, "suicides/100k pop", df_cols_numeric )
 
 #%% [markdown]
-### Sooooooo... population and # suicides provide the most information about a suicides-per-capita dependent variable? Brilliant deduction, Watson!!
+### No surprise: population and # suicides provide the most information about a suicides-per-capita dependent variable...
 
 ### Let's regress a different attr: "gdp_per_capita ($)"
 
@@ -257,14 +256,13 @@ print( "Best of all ElasticNet models: {}={} @ {}".format( y_at_max, x_at_max, r
 # ## Spark linear regression, model 1: data prep, regress suicide rate on raw features.
 
 #%%
-if "spark" in dir() and spark is not None:
-    spark.stop()
-spark = SparkContext(appName="heart")
-
 # just reuse the existing pandas DF...
-from pyspark.sql import SQLContext
-sqlContext = SQLContext(spark)
-sdf = sqlContext.createDataFrame(df)
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.getOrCreate()
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+#%%
+sdf = spark.createDataFrame(df)
 sdf.printSchema()
 
 #%%
@@ -275,7 +273,7 @@ sdf.head(5)
 sdf.describe().toPandas().transpose()
 
 #%%
-# data prep for linear regression w/ Spark... have to do the bizarre, annoying thing of restructuring data into 2 cols just for Spark.
+# data prep for linear regression w/ Spark... oddly have to restructure data into 2 cols just for Spark.
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import MinMaxScaler
@@ -318,7 +316,7 @@ def prep_sdf(
 # First, we need to specify a target column. What to predict? Let's try suicide rate.
 targetCol = "suicides/100k pop"
 
-# Second, build the Spark-is-so-special DF, of unnormalized features (same as above)...
+# Second, build the Spark DF, of unnormalized features (same as above)...
 sdf_prepped = prep_sdf( sdf, targetCol, None )
 sdf_prepped.show(3)
 
@@ -436,7 +434,7 @@ pd.DataFrame({
 # %% [markdown]
 ### What we learned from exploring feature importances:
 #
-# Oh. Suicide count predicts suicide rate? Someone call the NIMH to report this incredible finding!
+# Very little: Suicide count predicts suicide rate.
 #
 # Frankly, there aren't many features here on which to model... Yet, we can do better.
 
@@ -445,7 +443,7 @@ pd.DataFrame({
 #
 # 1) Recall that all my modeled features so far are purely numeric. This is convenient, but excludes probably-useful features like age and sex and generation.
 #
-# Of course, OLS no longer applies; now I must use a model that can take categorical variables, like logistic regression.
+#   Of course, OLS no longer applies; now I must use a model that can take categorical variables, like logistic regression.
 #
 # 2) Try a different modeling technique. I've already done this to extract feature importance - what were those results?
 
@@ -455,7 +453,7 @@ rfrEvaluator = RegressionEvaluator(
 print( "RF model R^2: {}".format( rfrEvaluator.evaluate( rfrPreds ) ) )
 
 # %% [markdown]
-### Wow, my best R^2 so far, over just numeric features!
+### Best R^2 so far, over just numeric features.
 #
 # **Why?**
 #
@@ -466,6 +464,8 @@ print( "RF model R^2: {}".format( rfrEvaluator.evaluate( rfrPreds ) ) )
 # # Keras regression, round 1
 #
 ##### Inspired by: https://machinelearningmastery.com/regression-tutorial-keras-deep-learning-library-python/
+#
+# 20240219 note: This section is un-runnable because I have Python 3.11, but Keras depends on Tensorflow, which currently requires <= Python 3.10.
 
 # %%
 from keras.models import Sequential

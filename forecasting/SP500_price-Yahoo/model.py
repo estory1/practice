@@ -5,16 +5,13 @@
 # Borrows from: https://github.com/Kulbear/stock-prediction/blob/master/stock-prediction.ipynb
 #
 #%%
+import os
 import time
 import math
 import pandas as pd
 import numpy as np
 
 import sklearn.preprocessing as prep
-
-from keras.models import Sequential
-from keras.layers.core import Dense, Dropout, Activation
-from keras.layers.recurrent import LSTM
 
 %matplotlib inline 
 
@@ -25,7 +22,7 @@ import matplotlib.pyplot as plt
 # ## Data Eng
 #%%
 df = pd.read_csv(
-    "/Users/estory/Documents/syncable/home/financial/finance.yahoo.com_data/20190514 - finance.yahoo.com - GSPC -SP500 index - daily - 1950-20190514.csv",
+    os.path.expanduser('~') + "/home/financial/finance.yahoo.com_data/20190514 - finance.yahoo.com - GSPC -SP500 index - daily - 1950-20190514.csv",
     index_col=0,
     parse_dates=[0])
 
@@ -97,6 +94,14 @@ print("y_test", y_test.shape)
 
 #%% [markdown]
 # ## Model
+#
+# 20240219 note: This section is un-runnable because I have Python 3.11, but Keras depends on Tensorflow, which currently requires <= Python 3.10.
+
+#%%
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from keras.layers.recurrent import LSTM
+
 #%%
 def build_model(layers):
     model = Sequential()

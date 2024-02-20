@@ -20,11 +20,11 @@ from torch.utils.data import dataset
 # import my lib for device selection
 import sys
 import os
-sys.path.append( os.path.expanduser('~') + "/Documents/syncable/home/dev/dev/libs_mine" )
+sys.path.append( os.path.expanduser('~') + "/home/dev/dev/libs_mine" )
 import torch_device
 
-# device = torch_device.get_best_device()
-device = torch.device("cpu")
+device = torch_device.get_best_device()
+# device = torch.device("cpu")
 
 
 #%%[markdown]
