@@ -25,17 +25,17 @@ class Data(Dataset):
         # self.x[:, 1] = torch.arange(-2, 2, 0.1)
 
         # 5x samples, and a different vec ==> w/ batch_size=2, loss decreases from 6 -> ~0.1, but spikes periodically10. loss curve smooths-out as batch_size -> full-batch of 200.
-        # self.x = torch.zeros(200, 3)
-        # self.x[:, 0] = torch.arange(-1, 1, 0.01)
-        # self.x[:, 1] = torch.arange(-1*2, 1*2, 0.01*2)
-        # self.x[:, 2] = torch.arange(-1, 1, 0.01)
+        self.x = torch.zeros(200, 3)
+        self.x[:, 0] = torch.arange(-1, 1, 0.01)
+        self.x[:, 1] = torch.arange(-1*2, 1*2, 0.01*2)
+        self.x[:, 2] = torch.arange(-1, 1, 0.01)
 
         # 25x samples, all different vecs ==> w/ batch_size=2, loss = 0 until >= iterations=5. loss curve does not smooth-out even as batch_size -> full-batch of 1000.
-        self.x = torch.zeros(1000, 4)
-        self.x[:, 0] = torch.arange(-1*5, 1*5, 0.01)
-        self.x[:, 1] = torch.arange(-1.2*5, 1.2*5, 0.012)
-        self.x[:, 2] = torch.arange(-1*50, 1*50, 0.1)
-        self.x[:, 3] = torch.arange(-1.5*5, 1.5*5, 0.015)
+        # self.x = torch.zeros(1000, 4)
+        # self.x[:, 0] = torch.arange(-1*5, 1*5, 0.01)
+        # self.x[:, 1] = torch.arange(-1.2*5, 1.2*5, 0.012)
+        # self.x[:, 2] = torch.arange(-1*50, 1*50, 0.1)
+        # self.x[:, 3] = torch.arange(-1.5*5, 1.5*5, 0.015)
         
         ### weights; slope m
         # self.w = torch.tensor([[1.0], [1.0], [1.0]])
