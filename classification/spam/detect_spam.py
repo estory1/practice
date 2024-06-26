@@ -3,6 +3,7 @@
 #
 
 #%%
+import os
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
@@ -13,7 +14,7 @@ from sklearn.metrics import classification_report
 #%%
 # df = pd.read_csv('kaggle.com-email-spam-classification-dataset-csv.zip')
 colnames =["label", "text"]
-df = pd.read_csv("achive.ics.uci.edu-sms+spam+collection/SMSSpamCollection", sep="\t", names=colnames)
+df = pd.read_csv( os.path.join( os.path.expanduser("~") , "Data", "archive.ics.uci.edu", "sms-spam-collection", "archive.ics.uci.edu-sms+spam+collection/SMSSpamCollection" ), sep="\t", names=colnames)
 print(df.shape)
 df.head()
 
